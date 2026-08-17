@@ -167,6 +167,33 @@ def calendar_month(year: int, month: int):
     return result
 
 
+@app.get("/api/employee/{employee_id}/history")
+def employee_history(employee_id: int):
+    with get_db() as conn:
+        emp = conn.execute(
+            "SELECT id, name FROM employees WHERE id = ? AND active = 1", (employee_id,)
+        ).fetchone()
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        rows = conn.execute("""
+            SELECT att_date, status
+            FROM attendance
+            WHERE employee_id = ?
+            ORDER BY att_date DESC
+        """, (employee_id,)).fetchall()
+        records = [dict(r) for r in rows]
+        present_count = sum(1 for r in records if r["status"] == "present")
+        absent_count = sum(1 for r in records if r["status"] == "absent")
+        return {
+            "employee_id": emp["id"],
+            "name": emp["name"],
+            "present_count": present_count,
+            "absent_count": absent_count,
+            "total_marked": len(records),
+            "records": records,
+        }
+
+
 @app.get("/api/day")
 def day_detail(day: str):
     with get_db() as conn:
