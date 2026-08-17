@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Office Attendance</title>
+<style>
+  :root {
+    --green: #1a7f37;
+    --red: #c0392b;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --text: #1f2328;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 14px; }
+  select, button {
+    font-size: 15px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  select { width: 100%; margin-bottom: 12px; background: #fff; }
+  .btn-row { display: flex; gap: 10px; }
+  button {
+    flex: 1;
+    cursor: pointer;
+    font-weight: 600;
+    border: none;
+    color: #fff;
+    transition: opacity .15s;
+  }
+  button:hover { opacity: .88; }
+  .btn-present { background: var(--green); }
+  .btn-absent { background: var(--red); }
+  #markResult { margin-top: 12px; font-size: 14px; min-height: 18px; }
+  .cal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .cal-header button {
+    flex: none; background: #eef0f2; color: var(--text); padding: 6px 12px;
+  }
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  .cal-dow {
+    text-align: center; font-size: 12px; color: var(--muted); font-weight: 600;
+    padding-bottom: 4px;
+  }
+  .cal-day {
+    aspect-ratio: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    position: relative;
+    background: #fff;
+  }
+  .cal-day.empty { visibility: hidden; }
+  .cal-day:hover { border-color: #9aa1a9; }
+  .dot-row { position: absolute; bottom: 5px; left: 6px; right: 6px; display: flex; gap: 3px; flex-wrap: wrap; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot.present { background: var(--green); }
+  .dot.absent { background: var(--red); }
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 10px; padding: 20px; max-width: 380px; width: 100%;
+    max-height: 80vh; overflow-y: auto;
+  }
+  .modal h3 { margin-top: 0; }
+  .modal-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .status-pill { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #fff; }
+  .status-pill.present { background: var(--green); }
+  .status-pill.absent { background: var(--red); }
+  .status-pill.none { background: #b0b6bd; }
+  .close-btn { margin-top: 14px; width: 100%; background: #eef0f2; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Office Attendance</h1>
+  <div class="sub">Pick your name and mark today's attendance.</div>
+
+  <div class="card">
+    <h2>Mark Attendance</h2>
+    <select id="empSelect"><option value="">Loading...</option></select>
+    <div class="btn-row">
+      <button class="btn-present" onclick="mark('present')">Present</button>
+      <button class="btn-absent" onclick="mark('absent')">Absent</button>
+    </div>
+    <div id="markResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>Team Calendar</h2>
+    <div class="cal-header">
+      <button onclick="changeMonth(-1)">&larr; Prev</button>
+      <strong id="calTitle"></strong>
+      <button onclick="changeMonth(1)">Next &rarr;</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3 id="modalDate"></h3>
+    <div id="modalList"></div>
+    <button class="close-btn" onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<script>
+const API = "";
+let cur = new Date();
+let calendarData = {};
+
+async function loadEmployees() {
+  const res = await fetch(API + "/api/employees");
+  const emps = await res.json();
+  const sel = document.getElementById("empSelect");
+  sel.innerHTML = '<option value="">-- Select your name --</option>' +
+    emps.map(e => `<option value="${e.id}">${e.name}</option>`).join("");
+}
+
+async function mark(status) {
+  const empId = document.getElementById("empSelect").value;
+  const resultEl = document.getElementById("markResult");
+  if (!empId) {
+    resultEl.textContent = "Please select your name first.";
+    resultEl.style.color = "#c0392b";
+    return;
+  }
+  try {
+    const res = await fetch(API + "/api/mark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: parseInt(empId), status })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed");
+    resultEl.textContent = `Marked ${status} for today (${data.date}).`;
+    resultEl.style.color = "#1a7f37";
+    loadCalendar();
+  } catch (e) {
+    resultEl.textContent = "Error: " + e.message;
+    resultEl.style.color = "#c0392b";
+  }
+}
+
+function changeMonth(delta) {
+  cur.setMonth(cur.getMonth() + delta);
+  loadCalendar();
+}
+
+async function loadCalendar() {
+  const year = cur.getFullYear();
+  const month = cur.getMonth() + 1;
+  const res = await fetch(`${API}/api/calendar?year=${year}&month=${month}`);
+  calendarData = await res.json();
+  renderCalendar(year, month);
+}
+
+function renderCalendar(year, month) {
+  const title = cur.toLocaleString('default', { month: 'long', year: 'numeric' });
+  document.getElementById("calTitle").textContent = title;
+
+  const grid = document.getElementById("calGrid");
+  grid.innerHTML = "";
+  ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d => {
+    const el = document.createElement("div");
+    el.className = "cal-dow";
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  const firstDay = new Date(year, month - 1, 1);
+  const startOffset = firstDay.getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  for (let i = 0; i < startOffset; i++) {
+    const el = document.createElement("div");
+    el.className = "cal-day empty";
+    grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const el = document.createElement("div");
+    el.className = "cal-day";
+    el.innerHTML = `<div>${d}</div>`;
+    const records = calendarData[dateStr] || [];
+    if (records.length) {
+      const dotRow = document.createElement("div");
+      dotRow.className = "dot-row";
+      records.slice(0, 8).forEach(r => {
+        const dot = document.createElement("span");
+        dot.className = "dot " + r.status;
+        dotRow.appendChild(dot);
+      });
+      el.appendChild(dotRow);
+    }
+    el.onclick = () => openDay(dateStr);
+    grid.appendChild(el);
+  }
+}
+
+async function openDay(dateStr) {
+  const res = await fetch(`${API}/api/day?day=${dateStr}`);
+  const data = await res.json();
+  document.getElementById("modalDate").textContent = dateStr;
+  const list = document.getElementById("modalList");
+  list.innerHTML = data.records.map(r => {
+    const status = r.status || "none";
+    const label = r.status ? r.status : "not marked";
+    return `<div class="modal-row"><span>${r.name}</span><span class="status-pill ${status}">${label}</span></div>`;
+  }).join("");
+  document.getElementById("modalBackdrop").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("modalBackdrop").classList.remove("open");
+}
+
+document.getElementById("modalBackdrop").addEventListener("click", (e) => {
+  if (e.target.id === "modalBackdrop") closeModal();
+});
+
+loadEmployees();
+loadCalendar();
+</script>
+</body>
+</html>
